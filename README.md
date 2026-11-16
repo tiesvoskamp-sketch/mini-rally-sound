@@ -3,6 +3,10 @@
 Virtueel turbo-4 rallygeluid voor de Mini via AUX. Geen dongle nodig: het toerental wordt geschat uit
 de versnellingsmeter + GPS van de iPhone.
 
+**Open in Safari op de iPhone:** https://tiesvoskamp-sketch.github.io/mini-rally-sound/
+
+Bijwerken: pas `app.html` aan → `python3 build.py` → commit + push (GitHub Pages serveert `docs/`).
+
 - `app.html` — de bron (één bestand: geluidsmotor, schatting toerental/versnelling, interface).
   Wordt ook als Claude-artifact gepubliceerd: https://claude.ai/artifact/XD1FHzVb5Kmr7bYEkASjvK
   (daar alleen simulatie + demo: artifacts krijgen geen toegang tot bewegingssensor en GPS).
