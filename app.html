@@ -1,0 +1,861 @@
+<title>Mini Rally Sound</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Saira+Condensed:wght@500;600;700;800&display=swap">
+<style>
+/* Layout: one-screen motorsport data-dash — shift-light strip, segmented rev bar and LCD readout on top; start, pedals and tuning stacked below. Single dark look on purpose (car at night). */
+:root{
+  --bg:#121417;
+  --panel:#1a1d22;
+  --panel-2:#23272e;
+  --line:#2f343c;
+  --fg:#ece8df;
+  --muted:#8f949c;
+  --lcd:#ffb020;
+  --lcd-dim:#4a3a17;
+  --led-g:#3fd17a;
+  --led-y:#ffd23a;
+  --led-r:#ff4636;
+  --led-b:#4f8cff;
+  --ok:#3fd17a;
+  --warn:#ffb020;
+  --bad:#ff5a4a;
+  --f-display:"Saira Condensed","Arial Narrow","Helvetica Neue",system-ui,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--fg)}
+body{
+  font-family:var(--f-body);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:12px 32px;
+  -webkit-tap-highlight-color:transparent;
+}
+.app{max-width:980px;margin:0 auto;display:grid;gap:14px}
+@media (min-width:820px){
+  .app{grid-template-columns:1.15fr 1fr;align-items:start;column-gap:22px}
+  .top,.dash{grid-column:1/-1}
+  .col-a{grid-column:1}
+  .col-b{grid-column:2;grid-row:3/span 3}
+}
+.col-a,.col-b{display:grid;gap:14px;min-width:0}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.brand{display:flex;align-items:baseline;gap:8px;font-family:var(--f-display);text-transform:uppercase;letter-spacing:.06em}
+.brand-mark{font-weight:800;font-size:13px;padding:2px 6px;border:1.5px solid var(--lcd);color:var(--lcd);border-radius:3px}
+.brand-name{font-weight:700;font-size:22px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px 9px 3px 7px;white-space:nowrap}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--line);flex:none}
+.chip[data-s="ok"] i{background:var(--ok)}
+.chip[data-s="wait"] i{background:var(--warn)}
+.chip[data-s="bad"] i{background:var(--bad)}
+.chip[data-s="ok"],.chip[data-s="wait"],.chip[data-s="bad"]{color:var(--fg)}
+
+/* dash */
+.dash{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px;display:grid;gap:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+.leds{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;padding:0 2px}
+.led{aspect-ratio:1;max-width:100%;border-radius:50%;background:#2a2e35;box-shadow:inset 0 -2px 3px rgba(0,0,0,.5)}
+.led.on.g{background:var(--led-g);box-shadow:0 0 10px var(--led-g)}
+.led.on.y{background:var(--led-y);box-shadow:0 0 10px var(--led-y)}
+.led.on.r{background:var(--led-r);box-shadow:0 0 12px var(--led-r)}
+.leds.flash .led{background:var(--led-b);box-shadow:0 0 14px var(--led-b);animation:blink .12s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.leds.flash .led{animation:none}}
+.tach{display:grid;gap:4px}
+.tach-bar{position:relative;height:22px;border-radius:4px;background:#0c0d0f;overflow:hidden}
+.tach-red{position:absolute;inset:0 0 0 82.5%;background:rgba(255,70,54,.22)}
+.tach-fill{position:absolute;inset:0;transform-origin:left center;transform:scaleX(0);background:linear-gradient(90deg,#b97810 0%,var(--lcd) 70%,var(--led-r) 100%);background-size:121% 100%}
+.tach-bar::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(2.5% - 2px),#0c0d0f calc(2.5% - 2px) 2.5%);pointer-events:none}
+.tach-scale{display:flex;justify-content:space-between;font-family:var(--f-display);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;padding:0 1px}
+.tach-scale span:nth-last-child(-n+2){color:var(--led-r)}
+.readout{display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:10px;background:#0c0d0f;border-radius:10px;padding:10px 14px 8px}
+.cell{display:grid;gap:0;min-width:0}
+.cell .val{font-family:var(--f-display);font-weight:800;color:var(--lcd);font-variant-numeric:tabular-nums;line-height:.9;text-shadow:0 0 18px rgba(255,176,32,.25)}
+.cell .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.rpm .val{font-size:clamp(40px,11vw,64px)}
+.spd{text-align:right}
+.spd .val{font-size:clamp(40px,11vw,64px)}
+.gear{text-align:center;padding:0 6px}
+.gear .val{font-size:clamp(76px,21vw,112px);color:var(--fg);text-shadow:none}
+.loadrow{display:grid;grid-template-columns:auto 1fr 44px;align-items:center;gap:10px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.meter{height:8px;border-radius:99px;background:#0c0d0f;overflow:hidden}
+.meter div{height:100%;width:100%;transform-origin:left;transform:scaleX(0);background:var(--led-g)}
+.meter.over div{background:var(--led-b)}
+#loadTxt{text-align:right;font-family:var(--f-display);font-size:15px;color:var(--fg);font-variant-numeric:tabular-nums;letter-spacing:0}
+
+/* buttons */
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--lcd);outline-offset:2px}
+.start{width:100%;min-height:64px;border:0;border-radius:12px;background:var(--lcd);color:#1a1405;font-family:var(--f-display);font-weight:800;font-size:24px;letter-spacing:.08em;text-transform:uppercase}
+.start.on{background:transparent;color:var(--lcd);border:2px solid var(--lcd)}
+.notice{margin:0;min-height:1.45em;font-size:13px;color:var(--muted)}
+.notice.warn{color:var(--warn)}
+.pedals{display:grid;grid-template-columns:1fr 1.6fr;gap:12px}
+.pedal{min-height:128px;border-radius:12px;border:1px solid var(--line);font-family:var(--f-display);font-weight:800;font-size:22px;letter-spacing:.14em;color:var(--fg);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  background:repeating-linear-gradient(0deg,#2b3038 0 7px,#1c1f25 7px 13px);transition:transform .06s}
+.pedal.gas{background:repeating-linear-gradient(0deg,#353b44 0 7px,#22262d 7px 13px)}
+.pedal.down{transform:scale(.97) translateY(2px);border-color:var(--lcd);color:var(--lcd)}
+.pedal.brake.down{border-color:var(--bad);color:var(--bad)}
+.ghost{width:100%;min-height:46px;border-radius:10px;border:1px solid var(--line);background:var(--panel);font-weight:600}
+.ghost:disabled{opacity:.45;cursor:default}
+
+/* controls */
+.controls{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:14px}
+.field{display:grid;gap:6px}
+.flabel{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:#0c0d0f;border-radius:10px;padding:3px;gap:3px}
+.seg button{border:0;border-radius:8px;background:transparent;min-height:40px;font-weight:600;font-size:14px;color:var(--muted);padding:6px 8px}
+.seg button[aria-checked="true"]{background:var(--panel-2);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.seg button[aria-checked="true"]::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--lcd);margin-right:7px;vertical-align:middle;transform:translateY(-1px)}
+.hint{margin:0;font-size:12.5px;color:var(--muted)}
+.slider{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center}
+.slider label{font-weight:500}
+.slider output{font-family:var(--f-display);font-size:15px;color:var(--lcd);font-variant-numeric:tabular-nums}
+.slider input{grid-column:1/-1;width:100%;accent-color:var(--lcd);height:28px;margin:0}
+
+/* tech + help */
+details.tech{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+details.tech summary{cursor:pointer;font-weight:600;padding:4px 0}
+.techgrid{display:grid;grid-template-columns:1fr auto;gap:4px 12px;margin:10px 0;font-size:13px}
+.techgrid dt{color:var(--muted)}
+.techgrid dd{margin:0;text-align:right;font-family:var(--f-display);font-size:15px;font-variant-numeric:tabular-nums}
+.howto{display:grid;gap:8px}
+.howto h2{margin:4px 0 0;font-family:var(--f-display);font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;text-wrap:balance}
+.howto ol{margin:0;padding-left:20px;display:grid;gap:6px;max-width:62ch}
+.howto li::marker{color:var(--lcd);font-family:var(--f-display);font-weight:700}
+.safety{margin:0;font-size:13px;color:var(--muted);border-left:2px solid var(--warn);padding-left:10px;max-width:62ch}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand"><span class="brand-mark">Mini</span><span class="brand-name">Rally Sound</span></div>
+    <div class="chips" aria-live="polite">
+      <span class="chip" id="chipAudio" data-s="off"><i></i><span>Geluid uit</span></span>
+      <span class="chip" id="chipMotion" data-s="off"><i></i><span>Beweging</span></span>
+      <span class="chip" id="chipGps" data-s="off"><i></i><span>GPS</span></span>
+      <span class="chip" id="chipDir" data-s="off"><i></i><span>Richting</span></span>
+    </div>
+  </header>
+
+  <section class="dash" aria-label="Dashboard">
+    <div class="leds" id="leds" aria-hidden="true">
+      <span class="led g"></span><span class="led g"></span><span class="led g"></span><span class="led g"></span>
+      <span class="led y"></span><span class="led y"></span><span class="led y"></span>
+      <span class="led r"></span><span class="led r"></span><span class="led r"></span>
+    </div>
+    <div class="tach">
+      <div class="tach-bar"><div class="tach-red"></div><div class="tach-fill" id="tachFill"></div></div>
+      <div class="tach-scale" aria-hidden="true"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div>
+    </div>
+    <div class="readout">
+      <div class="cell rpm"><div class="val" id="rpm">0</div><div class="lbl">toeren/min</div></div>
+      <div class="cell gear"><div class="val" id="gear">N</div><div class="lbl">versn.</div></div>
+      <div class="cell spd"><div class="val" id="spd">0</div><div class="lbl">km/u</div></div>
+    </div>
+    <div class="loadrow"><span>Gas</span><div class="meter" id="meter"><div id="loadFill"></div></div><span id="loadTxt">0%</span></div>
+  </section>
+
+  <div class="col-a">
+    <button id="startBtn" class="start" type="button">Start motor</button>
+    <p class="notice" id="notice" role="status">Tik op Start. Op je iPhone vraagt Safari om toegang tot beweging en locatie.</p>
+    <section class="pedals" id="pedals" aria-label="Pedalen (simulatie)">
+      <button class="pedal brake" id="brkBtn" type="button">Rem</button>
+      <button class="pedal gas" id="gasBtn" type="button">Gas</button>
+    </section>
+    <button id="demoBtn" class="ghost" type="button">Demo-rit afspelen (17 s)</button>
+  </div>
+
+  <div class="col-b">
+    <section class="controls" aria-label="Instellingen">
+      <div class="field">
+        <span class="flabel" id="lblSrc">Bron</span>
+        <div class="seg" role="radiogroup" aria-labelledby="lblSrc">
+          <button type="button" role="radio" data-src="sensor" id="srcSensor">Sensoren (auto)</button>
+          <button type="button" role="radio" data-src="sim" id="srcSim">Simulatie</button>
+        </div>
+      </div>
+      <div class="field" id="boxField">
+        <span class="flabel" id="lblBox">Versnellingsbak</span>
+        <div class="seg" role="radiogroup" aria-labelledby="lblBox">
+          <button type="button" role="radio" data-box="follow" id="boxFollow">Volg mijn handbak</button>
+          <button type="button" role="radio" data-box="auto" id="boxAuto">Virtueel schakelen</button>
+        </div>
+        <p class="hint" id="boxHint"></p>
+      </div>
+      <div class="slider"><label for="sVol">Volume</label><output id="oVol" for="sVol"></output><input id="sVol" type="range" min="0" max="1" step="0.01"></div>
+      <div class="slider"><label for="sSens">Gevoeligheid gaspedaal</label><output id="oSens" for="sSens"></output><input id="sSens" type="range" min="0.8" max="2.5" step="0.1"></div>
+      <div class="slider"><label for="sPops">Knallen bij gas los</label><output id="oPops" for="sPops"></output><input id="sPops" type="range" min="0" max="1" step="0.01"></div>
+      <div class="slider"><label for="sTurbo">Turbo en blow-off</label><output id="oTurbo" for="sTurbo"></output><input id="sTurbo" type="range" min="0" max="1" step="0.01"></div>
+      <div class="slider"><label for="sWhine">Gejank rechte tandwielen</label><output id="oWhine" for="sWhine"></output><input id="sWhine" type="range" min="0" max="1" step="0.01"></div>
+    </section>
+
+    <details class="tech">
+      <summary>Techniek</summary>
+      <dl class="techgrid" id="techGrid">
+        <dt>Lengteversnelling</dt><dd id="tA">–</dd>
+        <dt>Snelheid GPS</dt><dd id="tGps">–</dd>
+        <dt>GPS-nauwkeurigheid</dt><dd id="tAcc">–</dd>
+        <dt>Richting geleerd</dt><dd id="tDir">–</dd>
+        <dt>Bewegingsmetingen/s</dt><dd id="tHz">–</dd>
+        <dt>Geluidsroute</dt><dd id="tPath">–</dd>
+      </dl>
+      <button id="resetDir" class="ghost" type="button">Richting opnieuw leren</button>
+    </details>
+  </div>
+
+  <section class="howto col-a">
+    <h2>In de auto</h2>
+    <ol>
+      <li>Zet je telefoon vast in een houder, steek de AUX-kabel erin en zet de radio op AUX.</li>
+      <li>Open deze pagina in Safari, kies <b>Sensoren</b> en tik op <b>Start motor</b>. Sta beweging en locatie toe.</li>
+      <li>Laat Safari open staan. Het scherm blijft aan. Ga je naar een andere app, dan stopt het geluid.</li>
+      <li>Trek de eerste keer een paar keer rustig op: de app leert dan welke kant ‘vooruit’ is.</li>
+      <li>Klinkt het te tam of juist te wild? Pas <b>Gevoeligheid gaspedaal</b> aan. Het volume regel je met de radio.</li>
+    </ol>
+    <p class="safety">Stel alles in vóór je wegrijdt en raak de telefoon tijdens het rijden niet aan. Zet het volume zo dat je sirenes en claxons nog hoort.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= car model (generic Mini-like hatch, 6-speed manual) ================= */
+const CAR = {
+  ratios: [3.92, 2.14, 1.39, 1.09, 0.89, 0.74],
+  final: 3.59,
+  circ: 1.94,          // tyre circumference, m
+  idle: 850,
+  redline: 6600,
+  limiter: 6900,
+  aMax: [4.2, 3.0, 2.0, 1.5, 1.15, 0.92]  // full-throttle acceleration per gear, m/s²
+};
+const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const rpmFor = (v, g) => v * CAR.ratios[g] * CAR.final / CAR.circ * 60;
+const resist = v => 0.12 + 0.00032 * v * v;            // rolling + aero deceleration, m/s²
+const aFull = v => Math.min(3.4, 40 / (v + 6));         // best-gear full-throttle accel at speed v
+function torqueShape(r) {                               // turbo-4: plateau 1800–4800 rpm
+  if (r < 1300) return 0.45 + 0.35 * clamp((r - 850) / 450, 0, 1);
+  if (r < 1800) return 0.8 + 0.2 * (r - 1300) / 500;
+  if (r < 4800) return 1;
+  return Math.max(0.6, 1 - (r - 4800) / 2100 * 0.4);
+}
+
+/* ================= sound engine (runs in an AudioWorklet; same code as fallback) ================= */
+class BQ {
+  constructor() { this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0; this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
+  set(type, f, q, sr) {
+    f = Math.min(Math.max(f, 10), sr * 0.45);
+    const w = 2 * Math.PI * f / sr, c = Math.cos(w), s = Math.sin(w), al = s / (2 * q);
+    const a0 = 1 + al;
+    let b0, b1, b2;
+    if (type === 0) { b0 = (1 - c) / 2; b1 = 1 - c; b2 = (1 - c) / 2; }
+    else if (type === 1) { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = (1 + c) / 2; }
+    else { b0 = al; b1 = 0; b2 = -al; }
+    this.b0 = b0 / a0; this.b1 = b1 / a0; this.b2 = b2 / a0; this.a1 = -2 * c / a0; this.a2 = (1 - al) / a0;
+  }
+  run(x) {
+    const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
+    this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
+    return y;
+  }
+}
+
+class EngineDSP {
+  constructor(sr) {
+    this.sr = sr;
+    this.T = { rpm: 850, load: 0, lim: 0, gear: 0, speed: 0 };
+    this.S = { vol: 0.8, pops: 0.6, turbo: 0.6, whine: 0.35 };
+    this.rpm = 850; this.load = 0; this.loadSlow = 0;
+    this.ph = 0.5; this.idph = 0; this.limT = 0; this.cut = false;
+    this.off = [0.03, 0.278, 0.524, 0.771];       // firing points in the 720° cycle (slightly uneven = rasp)
+    this.camp = [1, 0.83, 0.95, 0.79];             // per-cylinder pulse strength
+    this.jit = [1, 1, 1, 1];
+    this.pulse = 0; this.nenv = 0; this.psm = 0;
+    this.c1 = new Float32Array(2048); this.c2 = new Float32Array(2048); this.ci = 0;
+    this.D1 = Math.min(2000, Math.round(0.0034 * sr)); this.D2 = Math.min(2000, Math.round(0.0021 * sr));
+    this.l1 = 0; this.l2 = 0;
+    this.fBody = new BQ(); this.fTone = new BQ(); this.fTone2 = new BQ(); this.fInt = new BQ();
+    this.fSpool = new BQ(); this.fHiss = new BQ(); this.fCrack = new BQ();
+    this.dcx = 0; this.dcy = 0;
+    this.turbo = 0; this.bovE = 0; this.bovT = 0; this.bovCd = 0; this.fph = 0;
+    this.popWin = 0; this.popE = 0; this.popB = 0;
+    this.tph = 0; this.wph = 0;
+    this.seed = 0x2545F491;
+    const e = t => Math.exp(-1 / (t * sr));
+    this.kP = e(0.0011); this.kN = e(0.0026); this.kPopE = e(0.0045); this.kPopB = e(0.0016); this.kBov = e(0.38);
+    this.kR = 1 - e(0.012); this.kL = 1 - e(0.03); this.kLS = 1 - e(0.25);
+    this.kTu = 1 - e(0.7); this.kTd = 1 - e(0.28); this.kPsm = 1 - e(0.004);
+  }
+  msg(d) {
+    if (d.t) { const T = this.T; for (const k in d.t) T[k] = d.t[k]; }
+    if (d.s) { const S = this.S; for (const k in d.s) S[k] = d.s[k]; }
+  }
+  rnd() { let x = this.seed | 0; x ^= x << 13; x ^= x >>> 17; x ^= x << 5; this.seed = x >>> 0; return this.seed / 4294967296; }
+  fire(k) {
+    if (this.cut) { if (this.rnd() < 0.35 * this.S.pops) this.pop(); return; }
+    const L = this.load;
+    const a = this.camp[k] * this.jit[k] * (0.27 + 0.73 * Math.pow(L, 0.75));
+    this.pulse += a; this.nenv += a * (0.3 + 0.7 * L);
+  }
+  cycle() {
+    const sp = 0.035 + 0.11 * (1 - this.load) * (this.rpm < 1300 ? 1 : 0.45);
+    for (let k = 0; k < 4; k++) this.jit[k] = 1 + (this.rnd() * 2 - 1) * sp;
+  }
+  pop() {
+    const big = this.rnd() < 0.28;
+    const a = big ? 0.9 + 0.7 * this.rnd() : 0.1 + 0.3 * this.rnd();
+    this.popE += a; this.popB += a * (big ? 1 : 0.45);
+  }
+  process(out, n) { for (let i = 0; i < n; i += 128) this.block(out, i, Math.min(128, n - i)); }
+  block(out, o, m) {
+    const sr = this.sr, T = this.T, S = this.S, TAU = 6.283185307179586, isr = 1 / sr;
+    const rn = Math.min(1, this.rpm / 7000), L0 = this.load;
+    this.fTone.set(0, 600 + 2400 * L0 + 1300 * rn, 0.8, sr);
+    this.fTone2.set(0, 900 + 3600 * L0 + 1500 * rn, 0.6, sr);
+    this.fBody.set(2, 60 + 55 * rn, 0.9, sr);
+    this.fInt.set(2, 1000 + 1100 * rn, 1.6, sr);
+    this.fSpool.set(2, 2600 + 5200 * this.turbo, 5, sr);
+    this.fHiss.set(1, 1500, 0.7, sr);
+    this.fCrack.set(1, 900, 0.7, sr);
+    this.popWin *= Math.exp(-m / ((0.7 + 1.6 * S.pops) * sr));
+    this.kP = Math.exp(-1 / (0.0011 * Math.min(2.6, Math.max(1, 2600 / this.rpm)) * sr));   // longer, fuller pulses at idle
+    const teeth = [13, 17, 21, 25, 28, 31][T.gear | 0] || 21;
+    const spd = Math.min(1, T.speed / 8);
+    let popRate = 0;
+    if (this.load < 0.08 && this.rpm > 1800) popRate = S.pops * (34 * this.popWin + (this.rpm > 3800 ? 2.2 : 0.4));
+    const pPop = popRate * isr, vol = S.vol, off = this.off;
+    for (let j = 0; j < m; j++) {
+      this.rpm += (T.rpm - this.rpm) * this.kR;
+      this.load += (T.load - this.load) * this.kL;
+      this.loadSlow += (this.load - this.loadSlow) * this.kLS;
+      const L = this.load, R = this.rpm;
+      if (T.lim) { this.limT += isr; this.cut = (this.limT % 0.085) < 0.042; } else { this.cut = false; this.limT = 0; }
+      this.idph += TAU * 1.3 * isr; if (this.idph > TAU) this.idph -= TAU;
+      const Re = R < 1250 ? R + 14 * Math.sin(this.idph) : R;
+      // firing events
+      const prev = this.ph; let ph = prev + Re / 120 * isr;
+      if (ph >= 1) {
+        for (let k = 0; k < 4; k++) if (prev < off[k]) this.fire(k);
+        ph -= 1; this.cycle();
+        for (let k = 0; k < 4; k++) if (off[k] <= ph) this.fire(k);
+      } else {
+        for (let k = 0; k < 4; k++) { const q = off[k]; if (prev < q && q <= ph) this.fire(k); }
+      }
+      this.ph = ph;
+      const w = this.rnd() * 2 - 1, w2 = this.rnd() * 2 - 1;
+      if (pPop > 0 && this.rnd() < pPop) this.pop();
+      // lift-off with boost: blow-off flutter + open the pop window
+      if (this.bovCd > 0) this.bovCd -= isr;
+      if (this.loadSlow - L > 0.3 && this.turbo > 0.28 && this.bovCd <= 0) {
+        this.bovE = Math.min(1, this.turbo * 1.1); this.bovT = 0; this.bovCd = 0.7;
+        this.popWin = Math.min(1.2, this.popWin + 0.5 + 0.5 * this.turbo);
+      }
+      // excitation: exhaust pulses + combustion noise + pops
+      this.pulse *= this.kP; this.nenv *= this.kN; this.popE *= this.kPopE; this.popB *= this.kPopB;
+      this.psm += (this.pulse - this.psm) * this.kPsm;
+      const exc = this.pulse + this.nenv * w * 0.55 + this.popB * (0.8 + 0.7 * w);
+      // exhaust pipe resonances (two damped combs)
+      const ci = this.ci;
+      const r1 = this.c1[(ci - this.D1) & 2047]; this.l1 += (r1 - this.l1) * 0.45;
+      const y1 = exc + 0.56 * this.l1; this.c1[ci] = y1;
+      const r2 = this.c2[(ci - this.D2) & 2047]; this.l2 += (r2 - this.l2) * 0.5;
+      const y2 = y1 - 0.4 * this.l2; this.c2[ci] = y2;
+      this.ci = (ci + 1) & 2047;
+      const ex = 0.45 * y1 + 0.45 * y2 + 1.3 * this.fBody.run(exc);
+      const drive = 1.1 + 3.2 * L + 0.8 * Math.min(1, this.popB);
+      let s = Math.tanh(drive * ex + 0.18) - 0.17808;
+      s = this.fTone2.run(this.fTone.run(s));
+      // induction roar
+      const intake = this.fInt.run(w) * this.psm * (0.15 + L) * 0.35;
+      // turbo spool + whistle
+      const tg = Math.min(1, L * 1.15) * Math.min(1, Math.max(0, (R - 1500) / 2600));
+      this.turbo += (tg - this.turbo) * (tg > this.turbo ? this.kTu : this.kTd);
+      this.tph += (2600 + 7400 * this.turbo) * isr; if (this.tph > 1) this.tph -= 1;
+      const tb = this.turbo * this.turbo * S.turbo;
+      const turbo = (Math.sin(TAU * this.tph) * 0.05 * (0.35 + 0.65 * L) + this.fSpool.run(w2) * 0.18 * L) * tb;
+      // blow-off / compressor flutter
+      let bov = 0;
+      if (this.bovE > 0.002) {
+        this.bovE *= this.kBov; this.bovT += isr;
+        this.fph += (24 - 11 * Math.min(1, this.bovT / 0.55)) * isr; if (this.fph > 1) this.fph -= 1;
+        bov = this.fHiss.run(w2) * this.bovE * (this.fph < 0.42 ? 1 : 0.18) * 0.32 * S.turbo;
+      }
+      const crack = this.fCrack.run(w) * this.popE * 0.55;
+      // straight-cut gear whine
+      this.wph += R / 60 * teeth * isr; if (this.wph > 1) this.wph -= 1;
+      const whine = (Math.sin(TAU * this.wph) + 0.25 * Math.sin(2 * TAU * this.wph)) * S.whine * 0.018 * spd * (L < 0.08 ? 1.7 : 0.7);
+      const mix = 0.6 * s + intake + turbo + bov + crack + whine;
+      const y = mix - this.dcx + 0.9975 * this.dcy; this.dcx = mix; this.dcy = y;
+      out[o + j] = Math.tanh(y * vol * 1.25) * 0.9;
+    }
+  }
+}
+
+const PROC_SRC = "class RallyProc extends AudioWorkletProcessor{constructor(){super();this.d=new EngineDSP(sampleRate);this.port.onmessage=e=>this.d.msg(e.data);}process(i,outs){const o=outs[0];const a=o&&o[0];if(!a)return true;this.d.process(a,a.length);for(let c=1;c<o.length;c++)o[c].set(a);return true;}}registerProcessor('rally-engine',RallyProc);";
+
+/* ================= drivetrain: speed + load -> gear + rpm ================= */
+function newG() { return { gear: 0, rpm: CAR.idle, lim: false, shiftT: 0, shiftDir: 0, lock: 0, dip: null, armT: 0, aPeak: 0, capT: 0, loadOut: 0, loadMem: 0 }; }
+
+function shiftEv(G, dir, fx) { G.shiftDir = dir; if (fx) G.shiftT = dir > 0 ? 0.13 : 0.2; }
+
+function autoBox(G, v, L, braking) {
+  if (G.lock > 0 || G.shiftT > 0) return;
+  const r = rpmFor(v, G.gear);
+  const up = 2400 + 4200 * Math.pow(G.loadMem, 1.3);   // remembers recent throttle: lifting off does not upshift
+  const offThrottle = L < 0.12;                          // rally style: never upshift off the throttle
+  if (G.gear < 5 && (offThrottle ? r > CAR.redline : r > Math.min(up, CAR.redline)) && rpmFor(v, G.gear + 1) > 1350) { G.gear++; shiftEv(G, 1, true); G.lock = 0.45; return; }
+  if (G.gear > 0) {
+    const rd = rpmFor(v, G.gear - 1);
+    if (r < 1250 || (L > 0.8 && r < 3400 && rd < 5800) || (braking && r < 2600 && rd < 5000)) { G.gear--; shiftEv(G, -1, true); G.lock = 0.45; }
+  }
+}
+
+function followBox(G, dt, v, aF, aS) {
+  const r = rpmFor(v, G.gear);
+  if (aS > 0.5) { G.armT = Math.min(2, G.armT + dt); G.aPeak = Math.max(G.aPeak, aS); }
+  else if (!G.dip) { G.armT = Math.max(0, G.armT - 2 * dt); G.aPeak *= Math.pow(0.5, dt); }
+  // clutch-in dip while pulling = upshift in progress
+  if (!G.dip && G.lock === 0 && G.armT > 0.35 && G.gear < 5 && r > 2200 && aF < Math.min(0.28, 0.35 * G.aPeak) && aF > -1.3) G.dip = { t: 0 };
+  if (G.dip) {
+    G.dip.t += dt;
+    if (aF < -1.5) { G.dip = null; G.armT = 0; G.aPeak = 0; }
+    else if (G.dip.t > 0.1 && aF > Math.max(0.3, 0.28 * G.aPeak)) {
+      if (rpmFor(v, G.gear + 1) > 1100) { G.gear++; shiftEv(G, 1, false); }
+      G.dip = null; G.armT = 0.25; G.aPeak = aS; G.lock = 0.5;
+    }
+    else if (G.dip.t > 1.7) {
+      // shifted up and settled into cruising (no braking, steady speed): still an upshift
+      if (Math.abs(aS) < 0.35 && r > 2600 && rpmFor(v, G.gear + 1) > 1500) { G.gear++; shiftEv(G, 1, false); G.lock = 0.5; }
+      G.dip = null; G.armT = 0; G.aPeak = 0;
+    }
+    return;
+  }
+  if (G.lock > 0) return;
+  if (G.gear > 0 && r < 1150) { G.gear--; shiftEv(G, -1, true); G.lock = 0.6; return; }
+  // pulling harder than this gear can: you must be in a lower gear
+  const cap = CAR.aMax[G.gear] * torqueShape(r);
+  if (G.gear > 0 && aS > cap * 1.25 + 0.15) {
+    G.capT += dt;
+    if (G.capT > 0.4) {
+      let h = G.gear - 1;
+      while (h > 0 && CAR.aMax[h] * torqueShape(rpmFor(v, h)) * 1.1 < aS) h--;
+      if (rpmFor(v, h) < CAR.redline) { G.gear = h; shiftEv(G, -1, true); G.lock = 0.6; }
+      G.capT = 0;
+    }
+  } else G.capT = 0;
+  if (G.gear < 5 && r > CAR.limiter + 250) { G.gear++; shiftEv(G, 1, false); G.lock = 0.5; }
+}
+
+function drivetrain(G, dt, v, aF, aS, load, mode, braking) {
+  const L = clamp(load, 0, 1);
+  G.loadMem = Math.max(L, G.loadMem * Math.exp(-dt / 2.5));
+  G.lock = Math.max(0, G.lock - dt);
+  G.shiftT = Math.max(0, G.shiftT - dt);
+  let target;
+  if (v < 1.8) {
+    G.gear = 0; G.dip = null; G.armT = 0;
+    target = CAR.idle + 2600 * L;
+  } else {
+    if (mode === 'auto') autoBox(G, v, L, braking); else followBox(G, dt, v, aF, aS);
+    target = rpmFor(v, G.gear);
+    if (G.dip) target = Math.max(rpmFor(v, Math.min(5, G.gear + 1)), G.rpm - 2800 * dt);
+    if (G.gear === 0) target = Math.max(target, CAR.idle + 2600 * L);   // clutch slip pulling away
+  }
+  target = Math.max(CAR.idle, target);
+  G.lim = target >= CAR.limiter;
+  if (G.lim) target = CAR.limiter;
+  const tau = G.shiftT > 0 ? 0.045 : (target > G.rpm ? 0.07 : 0.09);
+  G.rpm += (target - G.rpm) * Math.min(1, dt / tau);
+  let lo = L;
+  if (G.dip) lo = 0;
+  if (G.shiftT > 0) lo = G.shiftDir > 0 ? 0 : 0.55;
+  G.loadOut = lo;
+}
+
+/* ================= simulation car ================= */
+function newSim() { return { v: 0, thr: 0, brk: 0 }; }
+function simStep(S, G, dt, inp) {
+  S.thr += ((inp.gas || 0) - S.thr) * Math.min(1, dt / 0.1);
+  S.brk += ((inp.brk || 0) - S.brk) * Math.min(1, dt / 0.08);
+  const g = G.gear;
+  let drive = 0;
+  if (G.shiftT <= 0 || G.shiftDir < 0) drive = S.thr * CAR.aMax[g] * torqueShape(G.rpm);
+  if (G.lim) drive *= 0.15;
+  const eb = (S.thr < 0.05 && S.v > 1.5) ? 0.2 + 0.45 * G.rpm / 7000 * CAR.ratios[g] / 1.5 : 0;
+  let a = drive - (S.v > 0.05 ? resist(S.v) + eb : 0) - S.brk * 8;
+  S.v = Math.max(0, S.v + a * dt);
+  if (S.v === 0 && a < 0) a = 0;
+  return { v: S.v, a, load: S.thr };
+}
+
+function buildDemo() {
+  const G = newG(), S = newSim(), frames = [], dt = 1 / 60;
+  const prog = t => t < 0.6 ? {} : t < 1.0 ? { gas: 0.7 } : t < 1.6 ? {} : t < 11.2 ? { gas: 1 } : t < 13.6 ? {} : t < 16 ? { brk: 0.6 } : {};
+  for (let t = 0; t < 17.2; t += dt) {
+    const inp = prog(t);
+    const s = simStep(S, G, dt, inp);
+    drivetrain(G, dt, s.v, s.a, s.a, s.load, 'auto', (inp.brk || 0) > 0.1);
+    frames.push({ t, rpm: G.rpm, load: G.loadOut, lim: G.lim ? 1 : 0, gear: G.gear, speed: s.v });
+  }
+  return frames;
+}
+
+/* ================= sensors: phone motion + GPS -> speed and longitudinal acceleration ================= */
+const est = {
+  v: 0, aF: 0, aM: 0, aS: 0, aLong: 0,
+  gx: 0, gy: 0, gz: 0, gInit: false,
+  fwdAcc: [0, 0, 0], fwdMag: 0, fwdN: 0, fwdOK: false, conf: 0,
+  lastT: 0, motionN: 0, hzN: 0, hz: 0, hzT: 0,
+  gpsV: null, gpsT: 0, gpsAcc: null, dv: 0, prevV: null, prevT: 0, gpsN: 0
+};
+function resetDir() { est.fwdAcc = [0, 0, 0]; est.fwdMag = 0; est.fwdN = 0; est.fwdOK = false; est.conf = 0; }
+
+function onMotion(e, tNow) {
+  const t = tNow != null ? tNow : performance.now();
+  const dt = est.lastT ? Math.min(0.1, Math.max(0.001, (t - est.lastT) / 1000)) : 0.016;
+  est.lastT = t; est.motionN++; est.hzN++;
+  const ag = e.accelerationIncludingGravity, a0 = e.acceleration;
+  if (!ag || ag.x == null) return;
+  let ax, ay, az;
+  if (a0 && a0.x != null) {
+    ax = a0.x; ay = a0.y; az = a0.z;
+    const gx = ag.x - a0.x, gy = ag.y - a0.y, gz = ag.z - a0.z;
+    if (!est.gInit) { est.gx = gx; est.gy = gy; est.gz = gz; est.gInit = true; }
+    const k = Math.min(1, dt / 0.3);
+    est.gx += (gx - est.gx) * k; est.gy += (gy - est.gy) * k; est.gz += (gz - est.gz) * k;
+  } else {
+    if (!est.gInit) { est.gx = ag.x; est.gy = ag.y; est.gz = ag.z; est.gInit = true; }
+    const k = Math.min(1, dt / 0.8);
+    est.gx += (ag.x - est.gx) * k; est.gy += (ag.y - est.gy) * k; est.gz += (ag.z - est.gz) * k;
+    ax = ag.x - est.gx; ay = ag.y - est.gy; az = ag.z - est.gz;
+  }
+  const gn = Math.hypot(est.gx, est.gy, est.gz) || 1;
+  const ux = est.gx / gn, uy = est.gy / gn, uz = est.gz / gn;
+  const d = ax * ux + ay * uy + az * uz;
+  const hx = ax - d * ux, hy = ay - d * uy, hz = az - d * uz;    // horizontal acceleration
+  // learn "forward": horizontal acceleration that agrees with GPS speeding up / slowing down
+  const fresh = (t - est.gpsT) < 2500;
+  if (fresh && est.gpsV != null && est.gpsV > 2 && Math.abs(est.dv) > 0.45) {
+    const m = Math.hypot(hx, hy, hz);
+    if (m > 0.25 && m < 6) {
+      const sg = Math.sign(est.dv), dec = 0.9995;
+      est.fwdAcc[0] = est.fwdAcc[0] * dec + hx * sg;
+      est.fwdAcc[1] = est.fwdAcc[1] * dec + hy * sg;
+      est.fwdAcc[2] = est.fwdAcc[2] * dec + hz * sg;
+      est.fwdMag = est.fwdMag * dec + m; est.fwdN++;
+    }
+  }
+  let fx = est.fwdAcc[0], fy = est.fwdAcc[1], fz = est.fwdAcc[2];
+  const fd = fx * ux + fy * uy + fz * uz; fx -= fd * ux; fy -= fd * uy; fz -= fd * uz;
+  const fn = Math.hypot(fx, fy, fz);
+  est.conf = est.fwdMag > 0 ? fn / est.fwdMag : 0;
+  if (!est.fwdOK && est.fwdN > 90 && est.conf > 0.45) est.fwdOK = true;
+  if (est.fwdOK && est.conf < 0.2) est.fwdOK = false;
+  let aLong;
+  if (est.fwdOK && fn > 0) aLong = (hx * fx + hy * fy + hz * fz) / fn;
+  else aLong = fresh ? est.dv : 0;                  // until learned: GPS-derived acceleration
+  est.aLong = aLong;
+  est.aF += (aLong - est.aF) * Math.min(1, dt / 0.035);
+  est.aM += (aLong - est.aM) * Math.min(1, dt / 0.055);
+  est.aS += (aLong - est.aS) * Math.min(1, dt / 0.12);
+  // speed: integrate between GPS fixes
+  est.v = Math.max(0, est.v + (est.fwdOK ? est.aF : (fresh ? est.dv : 0)) * dt);
+  if (est.gpsV != null && fresh && est.gpsV < 0.6 && Math.abs(est.aS) < 0.35) est.v *= 0.9;
+  if (t - est.hzT > 1000) { est.hz = est.hzN; est.hzN = 0; est.hzT = t; }
+}
+
+function onGeo(p, tNow) {
+  const t = tNow != null ? tNow : performance.now();
+  const c = p.coords;
+  est.gpsAcc = c.accuracy;
+  const sp = (c.speed != null && c.speed >= 0 && isFinite(c.speed)) ? c.speed : null;
+  if (sp == null) return;
+  if (est.prevV != null) {
+    const dtg = (t - est.prevT) / 1000;
+    if (dtg > 0.3 && dtg < 4) est.dv += ((sp - est.prevV) / dtg - est.dv) * 0.6;
+  }
+  est.prevV = sp; est.prevT = t; est.gpsV = sp; est.gpsT = t; est.gpsN++;
+  est.v += (sp - est.v) * (est.fwdOK ? 0.35 : 1);
+}
+
+/* ================= settings ================= */
+const KEY = 'mini-rally-sound.v1';
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const set = Object.assign({ source: isTouch ? 'sensor' : 'sim', gearMode: 'follow', vol: 0.8, sens: 1.4, pops: 0.6, turbo: 0.6, whine: 0.35 }, (() => {
+  try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; }
+})());
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(set)); } catch (e) {} };
+const dspSettings = () => ({ s: { vol: set.vol, pops: set.pops, turbo: set.turbo, whine: set.whine } });
+
+/* ================= audio ================= */
+let ctx = null, node = null, post = () => {}, audioPath = '–', wakeLock = null;
+let unlockEl = null;
+function silentWav() {
+  const n = 800, b = new Uint8Array(44 + n), dv = new DataView(b.buffer);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) b[o + i] = s.charCodeAt(i); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+  w(36, 'data'); dv.setUint32(40, n, true); b.fill(128, 44);
+  let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return 'data:audio/wav;base64,' + btoa(s);
+}
+
+async function startAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ctx = new AC({ latencyHint: 'interactive' });
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  if (!navigator.audioSession) {
+    try { if (!unlockEl) { unlockEl = new Audio(silentWav()); unlockEl.loop = true; unlockEl.setAttribute('playsinline', ''); } unlockEl.play().catch(() => {}); } catch (e) {}
+  }
+  const resumeP = ctx.resume();
+  const master = ctx.createGain();
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -10; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
+  master.connect(comp); comp.connect(ctx.destination);
+  ctx.onstatechange = updateChips;
+  let ok = false;
+  try {
+    if (ctx.audioWorklet) {
+      const src = BQ.toString() + '\n' + EngineDSP.toString() + '\n' + PROC_SRC;
+      const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(url);
+      node = new AudioWorkletNode(ctx, 'rally-engine', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+      post = d => node.port.postMessage(d);
+      node.connect(master); ok = true; audioPath = 'AudioWorklet';
+    }
+  } catch (e) { console.warn('AudioWorklet niet beschikbaar, val terug', e); }
+  if (!ok) {
+    const dsp = new EngineDSP(ctx.sampleRate);
+    const sp = ctx.createScriptProcessor(1024, 1, 2);
+    sp.onaudioprocess = ev => { const a = ev.outputBuffer.getChannelData(0); dsp.process(a, a.length); ev.outputBuffer.getChannelData(1).set(a); };
+    post = d => dsp.msg(d);
+    sp.connect(master); node = sp; audioPath = 'ScriptProcessor';
+  }
+  post(dspSettings());
+  await resumeP.catch(() => {});
+  audioPath += ' · ' + Math.round(ctx.sampleRate / 100) / 10 + ' kHz';
+  updateChips();
+}
+
+async function keepAwake() {
+  try { if (navigator.wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); } } catch (e) { wakeLock = null; }
+}
+
+/* ================= run state ================= */
+let running = false, geoId = null, sensorsOn = false, sensorTimer = 0;
+let G = newG(), SIM = newSim(), demo = null, curV = 0, curA = 0;
+const input = { gas: 0, brk: 0 };
+const $ = id => document.getElementById(id);
+const notice = (txt, warn) => { const n = $('notice'); n.textContent = txt; n.classList.toggle('warn', !!warn); };
+
+function requestMotion() {
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    return DeviceMotionEvent.requestPermission().catch(() => 'denied');
+  }
+  return Promise.resolve(typeof DeviceMotionEvent !== 'undefined' ? 'granted' : 'unsupported');
+}
+
+async function startSensors(permP) {
+  const res = await permP;
+  if (!running || set.source !== 'sensor') return;
+  if (res !== 'granted') { sensorFail(res === 'unsupported' ? 'Dit apparaat heeft geen bewegingssensor' : 'Geen toestemming voor de bewegingssensor'); return; }
+  window.addEventListener('devicemotion', onMotion);
+  sensorsOn = true;
+  if ('geolocation' in navigator) {
+    try { geoId = navigator.geolocation.watchPosition(p => onGeo(p), err => { est.gpsErr = err.code; updateChips(); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }); } catch (e) { est.gpsErr = 2; }
+  }
+  clearTimeout(sensorTimer);
+  sensorTimer = setTimeout(() => { if (running && set.source === 'sensor' && est.motionN === 0) sensorFail('Geen bewegingsdata ontvangen (hier geblokkeerd of geen sensor)'); }, 2200);
+  notice('Sensoren aan. Trek rustig op, dan leert de app welke kant vooruit is.');
+}
+function stopSensors() {
+  window.removeEventListener('devicemotion', onMotion);
+  if (geoId != null && navigator.geolocation) navigator.geolocation.clearWatch(geoId);
+  geoId = null; sensorsOn = false; clearTimeout(sensorTimer);
+}
+function sensorFail(msg) {
+  stopSensors();
+  set.source = 'sim'; save(); syncUI();
+  notice(msg + '. Overgeschakeld naar Simulatie.', true);
+}
+
+function onStart() {
+  if (running) { stop(); return; }
+  const permP = set.source === 'sensor' ? requestMotion() : null;   // must run inside the tap
+  running = true; G = newG(); SIM = newSim(); demo = null;
+  startAudio().catch(e => { notice('Geluid kon niet starten: ' + e.message, true); });
+  keepAwake();
+  if (permP) startSensors(permP); else notice('Simulatie: houd Gas ingedrukt (of pijltje omhoog / W). Rem met pijltje omlaag / S.');
+  syncUI();
+}
+function stop() {
+  running = false; demo = null; stopSensors();
+  try { if (ctx) ctx.close(); } catch (e) {}
+  ctx = null; node = null; post = () => {};
+  try { if (wakeLock) wakeLock.release(); } catch (e) {}
+  wakeLock = null;
+  if (unlockEl) { try { unlockEl.pause(); } catch (e) {} }
+  notice('Motor uit.');
+  syncUI();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running) {
+    keepAwake();
+    if (ctx && ctx.state !== 'running') ctx.resume().then(updateChips).catch(() => notice('Tik op het scherm om het geluid te hervatten.', true));
+  }
+});
+document.addEventListener('pointerdown', () => { if (running && ctx && ctx.state !== 'running') ctx.resume().then(updateChips).catch(() => {}); });
+
+/* ================= main loop ================= */
+let last = 0;
+function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = last ? Math.min(0.05, (now - last) / 1000) : 0.016;
+  last = now;
+  if (running) {
+    if (demo) {
+      const el = (now - demo.t0) / 1000;
+      while (demo.i < demo.frames.length - 1 && demo.frames[demo.i + 1].t <= el) demo.i++;
+      const f = demo.frames[demo.i];
+      G.rpm = f.rpm; G.gear = f.gear; G.loadOut = f.load; G.lim = !!f.lim; curV = f.speed; curA = 0;
+      post({ t: { rpm: f.rpm, load: f.load, lim: f.lim, gear: f.gear, speed: f.speed } });
+      if (el > demo.frames[demo.frames.length - 1].t) { demo = null; G = newG(); SIM = newSim(); syncUI(); }
+    } else {
+      let v, aF, aS, load, braking, mode;
+      if (set.source === 'sim' || !sensorsOn) {
+        const s = simStep(SIM, G, dt, set.source === 'sim' ? input : {});
+        v = s.v; aF = aS = s.a; load = s.load; braking = input.brk > 0.1; mode = 'auto';
+      } else {
+        v = est.v; aF = est.aF; aS = est.aS; braking = aS < -2.0; mode = set.gearMode;
+        load = (est.aM + resist(v)) / aFull(v) * set.sens;
+        if (v < 0.5 && est.aM < 0.3) load = Math.min(load, 0.05);
+      }
+      drivetrain(G, dt, v, aF, aS, load, mode, braking);
+      curV = v; curA = aS;
+      post({ t: { rpm: G.rpm, load: G.loadOut, lim: G.lim ? 1 : 0, gear: G.gear, speed: v } });
+    }
+  }
+  render();
+}
+
+/* ================= UI ================= */
+const ui = {
+  rpm: $('rpm'), gear: $('gear'), spd: $('spd'), fill: $('tachFill'), load: $('loadFill'), loadTxt: $('loadTxt'), meter: $('meter'),
+  leds: $('leds'), ledEls: Array.from(document.querySelectorAll('#leds .led'))
+};
+const cache = {};
+const put = (k, el, v) => { if (cache[k] !== v) { cache[k] = v; el.textContent = v; } };
+function render() {
+  const r = running ? G.rpm : 0;
+  put('rpm', ui.rpm, String(Math.round(r / 10) * 10));
+  put('gear', ui.gear, !running ? '–' : (curV < 0.5 && G.loadOut < 0.15 ? 'N' : String(G.gear + 1)));
+  put('spd', ui.spd, String(Math.round(curV * 3.6)));
+  const fs = (r / 8000).toFixed(3);
+  if (cache.fill !== fs) { cache.fill = fs; ui.fill.style.transform = 'scaleX(' + fs + ')'; }
+  const lo = running ? G.loadOut : 0;
+  const ls = lo.toFixed(2);
+  if (cache.load !== ls) { cache.load = ls; ui.load.style.transform = 'scaleX(' + ls + ')'; ui.loadTxt.textContent = Math.round(lo * 100) + '%'; }
+  const over = running && lo < 0.06 && r > 1800;
+  if (cache.over !== over) { cache.over = over; ui.meter.classList.toggle('over', over); }
+  const n = running ? clamp(Math.ceil((r - 4300) / (CAR.redline - 4300) * 10), 0, 10) : 0;
+  const flash = running && r >= CAR.redline - 40;
+  if (cache.leds !== n || cache.flash !== flash) {
+    cache.leds = n; cache.flash = flash;
+    ui.ledEls.forEach((el, i) => el.classList.toggle('on', i < n));
+    ui.leds.classList.toggle('flash', flash);
+  }
+}
+
+function chip(id, state, text) { const c = $(id); c.dataset.s = state; c.lastElementChild.textContent = text; }
+function updateChips() {
+  if (!running || !ctx) chip('chipAudio', 'off', 'Geluid uit');
+  else chip('chipAudio', ctx.state === 'running' ? 'ok' : 'wait', ctx.state === 'running' ? 'Geluid aan' : 'Geluid gepauzeerd');
+  const sens = running && set.source === 'sensor';
+  if (!sens) { chip('chipMotion', 'off', 'Beweging'); chip('chipGps', 'off', 'GPS'); chip('chipDir', 'off', 'Richting'); }
+  else {
+    chip('chipMotion', est.motionN > 0 ? 'ok' : 'wait', est.motionN > 0 ? 'Beweging' : 'Beweging…');
+    if (est.gpsErr === 1) chip('chipGps', 'bad', 'GPS geweigerd');
+    else if (est.gpsAcc != null) chip('chipGps', est.gpsAcc < 30 ? 'ok' : 'wait', 'GPS ±' + Math.round(est.gpsAcc) + ' m');
+    else chip('chipGps', 'wait', 'GPS zoekt…');
+    chip('chipDir', est.fwdOK ? 'ok' : 'wait', est.fwdOK ? 'Richting' : 'Richting leren…');
+  }
+  $('tA').textContent = running ? curA.toFixed(2) + ' m/s²' : '–';
+  $('tGps').textContent = est.gpsV != null ? (est.gpsV * 3.6).toFixed(0) + ' km/u' : '–';
+  $('tAcc').textContent = est.gpsAcc != null ? '±' + Math.round(est.gpsAcc) + ' m' : '–';
+  $('tDir').textContent = est.fwdN ? Math.round(est.conf * 100) + '%' + (est.fwdOK ? ' (ok)' : '') : '–';
+  $('tHz').textContent = sensorsOn ? String(est.hz) : '–';
+  $('tPath').textContent = running ? audioPath : '–';
+}
+setInterval(updateChips, 400);
+
+function syncUI() {
+  const sb = $('startBtn');
+  sb.textContent = running ? 'Motor uit' : 'Start motor';
+  sb.classList.toggle('on', running);
+  document.querySelectorAll('[data-src]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.src === set.source)));
+  document.querySelectorAll('[data-box]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.box === set.gearMode)));
+  $('pedals').hidden = set.source !== 'sim';
+  $('boxField').hidden = set.source !== 'sensor';
+  $('boxHint').textContent = set.gearMode === 'follow'
+    ? 'De app herkent jouw opschakelen aan het korte wegvallen van de versnelling. Terugschakelen raadt hij. Werkt het niet goed? Kies Virtueel schakelen.'
+    : 'De app schakelt zelf, zoals een sequentiële rallybak. Dit klinkt strak, maar valt niet samen met jouw schakelmomenten.';
+  $('demoBtn').disabled = !!demo;
+  updateChips();
+}
+
+document.querySelectorAll('[data-src]').forEach(b => b.addEventListener('click', () => {
+  const src = b.dataset.src;
+  if (src === set.source) return;
+  set.source = src; save();
+  if (running) {
+    G = newG(); SIM = newSim();
+    if (src === 'sensor') startSensors(requestMotion());
+    else { stopSensors(); notice('Simulatie: houd Gas ingedrukt (of pijltje omhoog / W).'); }
+  }
+  syncUI();
+}));
+document.querySelectorAll('[data-box]').forEach(b => b.addEventListener('click', () => { set.gearMode = b.dataset.box; save(); syncUI(); }));
+
+const sliders = [['sVol', 'oVol', 'vol', v => Math.round(v * 100) + '%'], ['sSens', 'oSens', 'sens', v => '×' + (+v).toFixed(1)],
+  ['sPops', 'oPops', 'pops', v => Math.round(v * 100) + '%'], ['sTurbo', 'oTurbo', 'turbo', v => Math.round(v * 100) + '%'], ['sWhine', 'oWhine', 'whine', v => Math.round(v * 100) + '%']];
+sliders.forEach(([sid, oid, key, fmt]) => {
+  const s = $(sid), o = $(oid);
+  s.value = set[key]; o.textContent = fmt(set[key]);
+  s.addEventListener('input', () => { set[key] = parseFloat(s.value); o.textContent = fmt(set[key]); post(dspSettings()); save(); });
+});
+
+$('startBtn').addEventListener('click', onStart);
+$('resetDir').addEventListener('click', () => { resetDir(); notice('Richting gewist. Trek een paar keer rustig op.'); });
+$('demoBtn').addEventListener('click', () => {
+  if (!running) onStart();
+  demo = { frames: buildDemo(), t0: performance.now(), i: 0 };
+  notice('Demo: wegrijden, vol gas door de versnellingen, gas los en remmen met terugschakelen.');
+  syncUI();
+});
+
+function pedal(id, key) {
+  const el = $(id);
+  const on = e => { e.preventDefault(); input[key] = 1; el.classList.add('down'); try { el.setPointerCapture(e.pointerId); } catch (x) {} };
+  const off = () => { input[key] = 0; el.classList.remove('down'); };
+  el.addEventListener('pointerdown', on);
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => el.addEventListener(t, off));
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+pedal('gasBtn', 'gas'); pedal('brkBtn', 'brk');
+const keyMap = { ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brk', KeyS: 'brk' };
+window.addEventListener('keydown', e => { const k = keyMap[e.code]; if (k && set.source === 'sim') { input[k] = 1; e.preventDefault(); } });
+window.addEventListener('keyup', e => { const k = keyMap[e.code]; if (k) input[k] = 0; });
+
+// debug/test handle
+window.__rs = { CAR, EngineDSP, BQ, est, onMotion, onGeo, drivetrain, newG, newSim, simStep, buildDemo, rpmFor, resist, aFull, input, get G() { return G; }, get running() { return running; }, get ctx() { return ctx; } };
+
+syncUI();
+requestAnimationFrame(tick);
+})();
+</script>
