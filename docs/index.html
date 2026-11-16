@@ -167,6 +167,7 @@ details.tech summary{cursor:pointer;font-weight:600;padding:4px 0}
       <button class="pedal gas" id="gasBtn" type="button">Gas</button>
     </section>
     <button id="demoBtn" class="ghost" type="button">Demo-rit afspelen (17 s)</button>
+    <button id="shareBtn" class="ghost" type="button" hidden>Rit-log delen (voor afstellen)</button>
   </div>
 
   <div class="col-b">
@@ -196,10 +197,13 @@ details.tech summary{cursor:pointer;font-weight:600;padding:4px 0}
     <details class="tech">
       <summary>Techniek</summary>
       <dl class="techgrid" id="techGrid">
+        <dt>Gasrespons</dt><dd id="tResp">–</dd>
+        <dt>Audiovertraging</dt><dd id="tLat">–</dd>
         <dt>Lengteversnelling</dt><dd id="tA">–</dd>
         <dt>Snelheid GPS</dt><dd id="tGps">–</dd>
         <dt>GPS-nauwkeurigheid</dt><dd id="tAcc">–</dd>
         <dt>Richting geleerd</dt><dd id="tDir">–</dd>
+        <dt>Sensor ↔ GPS (≈1,00 = goed)</dt><dd id="tScale">–</dd>
         <dt>Bewegingsmetingen/s</dt><dd id="tHz">–</dd>
         <dt>Geluidsroute</dt><dd id="tPath">–</dd>
       </dl>
@@ -210,10 +214,10 @@ details.tech summary{cursor:pointer;font-weight:600;padding:4px 0}
   <section class="howto col-a">
     <h2>In de auto</h2>
     <ol>
-      <li>Zet je telefoon vast in een houder, steek de AUX-kabel erin en zet de radio op AUX.</li>
+      <li>Zet je telefoon vast in een houder, steek de AUX-kabel erin en zet de radio op AUX. Koppel Bluetooth van de auto los: via Bluetooth loopt het geluid extra achter.</li>
       <li>Open deze pagina in Safari, kies <b>Sensoren</b> en tik op <b>Start motor</b>. Sta beweging en locatie toe.</li>
       <li>Laat Safari open staan. Het scherm blijft aan. Ga je naar een andere app, dan stopt het geluid.</li>
-      <li>Trek de eerste keer een paar keer rustig op: de app leert dan welke kant ‘vooruit’ is.</li>
+      <li>Trek de eerste rit een paar keer op tot ‘Richting’ groen is. Daarvoor loopt het geluid ±1 s achter. Zit je telefoon de volgende keer net zo in de houder, dan onthoudt de app de richting en reageert hij meteen.</li>
       <li>Klinkt het te tam of juist te wild? Pas <b>Gevoeligheid gaspedaal</b> aan. Het volume regel je met de radio.</li>
     </ol>
     <p class="safety">Stel alles in vóór je wegrijdt en raak de telefoon tijdens het rijden niet aan. Zet het volume zo dat je sirenes en claxons nog hoort.</p>
@@ -288,7 +292,7 @@ class EngineDSP {
     this.seed = 0x2545F491;
     const e = t => Math.exp(-1 / (t * sr));
     this.kP = e(0.0011); this.kN = e(0.0026); this.kPopE = e(0.0045); this.kPopB = e(0.0016); this.kBov = e(0.38);
-    this.kR = 1 - e(0.012); this.kL = 1 - e(0.03); this.kLS = 1 - e(0.25);
+    this.kR = 1 - e(0.012); this.kL = 1 - e(0.02); this.kLS = 1 - e(0.25);
     this.kTu = 1 - e(0.7); this.kTd = 1 - e(0.28); this.kPsm = 1 - e(0.004);
   }
   msg(d) {
@@ -469,7 +473,7 @@ function drivetrain(G, dt, v, aF, aS, load, mode, braking) {
   target = Math.max(CAR.idle, target);
   G.lim = target >= CAR.limiter;
   if (G.lim) target = CAR.limiter;
-  const tau = G.shiftT > 0 ? 0.045 : (target > G.rpm ? 0.07 : 0.09);
+  const tau = G.shiftT > 0 ? 0.045 : (target > G.rpm ? 0.05 : 0.08);
   G.rpm += (target - G.rpm) * Math.min(1, dt / tau);
   let lo = L;
   if (G.dip) lo = 0;
@@ -506,14 +510,55 @@ function buildDemo() {
 }
 
 /* ================= sensors: phone motion + GPS -> speed and longitudinal acceleration ================= */
-const est = {
-  v: 0, aF: 0, aM: 0, aS: 0, aLong: 0,
-  gx: 0, gy: 0, gz: 0, gInit: false,
-  fwdAcc: [0, 0, 0], fwdMag: 0, fwdN: 0, fwdOK: false, conf: 0,
+const GPS_LAG = 0.7;                  // s: iPhone GPS speed trails the accelerometer by roughly this much
+const HN = 300;                       // history ring, ~5 s at 60 Hz
+const H = new Float64Array(HN * 5);   // rows of [t, Ix, Iy, Iz, v]
+const AXIS_KEY = 'mini-rally-sound.axis.v1';
+const freshEst = () => ({
+  v: 0, aF: 0, aM: 0, aS: 0, aLong: 0, aPred: 0, jerk: 0, aMprev: 0,
+  gx: 0, gy: 0, gz: 0, gInit: false, ux: 0, uy: 0, uz: 1,
+  Ix: 0, Iy: 0, Iz: 0, hi: 0, fixPrev: null,
+  fwdAcc: [0, 0, 0], fwdMag: 0, dv2: 0, fwdN: 0, fwdOK: false, conf: 0, scale: 0, restored: false, restoreChecked: false,
   lastT: 0, motionN: 0, hzN: 0, hz: 0, hzT: 0,
-  gpsV: null, gpsT: 0, gpsAcc: null, dv: 0, prevV: null, prevT: 0, gpsN: 0
-};
-function resetDir() { est.fwdAcc = [0, 0, 0]; est.fwdMag = 0; est.fwdN = 0; est.fwdOK = false; est.conf = 0; }
+  gpsV: null, gpsT: 0, gpsAcc: null, gpsErr: 0, dv: 0, gpsN: 0, audioLat: null
+});
+const est = freshEst();
+function resetEst() { Object.assign(est, freshEst()); }
+function resetDir() {
+  est.fwdAcc = [0, 0, 0]; est.fwdMag = 0; est.dv2 = 0; est.fwdN = 0; est.fwdOK = false; est.conf = 0; est.restored = false;
+  try { localStorage.removeItem(AXIS_KEY); } catch (e) {}
+}
+function saveAxis(fx, fy, fz) {
+  try { localStorage.setItem(AXIS_KEY, JSON.stringify({ f: [fx, fy, fz], u: [est.ux, est.uy, est.uz] })); } catch (e) {}
+}
+function tryRestoreAxis() {
+  est.restoreChecked = true;
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(AXIS_KEY) || 'null'); } catch (e) {}
+  if (!s || !s.u || !s.f) return;
+  if (s.u[0] * est.ux + s.u[1] * est.uy + s.u[2] * est.uz < 0.978) return;   // phone sits differently (>12°): learn again
+  est.fwdAcc = [s.f[0] * 3, s.f[1] * 3, s.f[2] * 3]; est.fwdMag = 3; est.dv2 = 3; est.fwdN = 3;
+  est.fwdOK = true; est.restored = true; est.conf = 1; est.scale = 1;
+}
+function horizAxis() {
+  let fx = est.fwdAcc[0], fy = est.fwdAcc[1], fz = est.fwdAcc[2];
+  const d = fx * est.ux + fy * est.uy + fz * est.uz;
+  fx -= d * est.ux; fy -= d * est.uy; fz -= d * est.uz;
+  return [fx, fy, fz, Math.hypot(fx, fy, fz)];
+}
+function updateAxisState() {
+  const [fx, fy, fz, fn] = horizAxis();
+  est.conf = est.fwdMag > 0 ? fn / est.fwdMag : 0;
+  est.scale = est.dv2 > 0 ? fn / est.dv2 : 0;          // ~1.0 when the accelerometer and GPS agree
+  if (!est.fwdOK && est.fwdN >= 3 && est.conf > 0.6) est.fwdOK = true;
+  else if (est.fwdOK && est.fwdN >= 6 && est.conf < 0.35) { est.fwdOK = false; est.restored = false; }
+  if (est.fwdOK && est.fwdN >= 6 && fn > 0) saveAxis(fx / fn, fy / fn, fz / fn);
+}
+function histAt(tq) {
+  const n = Math.min(est.hi, HN);
+  for (let j = 1; j <= n; j++) { const k = ((est.hi - j) % HN) * 5; if (H[k] <= tq) return k; }
+  return -1;
+}
 
 function onMotion(e, tNow) {
   const t = tNow != null ? tNow : performance.now();
@@ -521,6 +566,7 @@ function onMotion(e, tNow) {
   est.lastT = t; est.motionN++; est.hzN++;
   const ag = e.accelerationIncludingGravity, a0 = e.acceleration;
   if (!ag || ag.x == null) return;
+  if (REC.on && tNow == null) recMotion(t, a0, ag);
   let ax, ay, az;
   if (a0 && a0.x != null) {
     ax = a0.x; ay = a0.y; az = a0.z;
@@ -535,37 +581,26 @@ function onMotion(e, tNow) {
     ax = ag.x - est.gx; ay = ag.y - est.gy; az = ag.z - est.gz;
   }
   const gn = Math.hypot(est.gx, est.gy, est.gz) || 1;
-  const ux = est.gx / gn, uy = est.gy / gn, uz = est.gz / gn;
-  const d = ax * ux + ay * uy + az * uz;
-  const hx = ax - d * ux, hy = ay - d * uy, hz = az - d * uz;    // horizontal acceleration
-  // learn "forward": horizontal acceleration that agrees with GPS speeding up / slowing down
+  est.ux = est.gx / gn; est.uy = est.gy / gn; est.uz = est.gz / gn;
+  if (!est.restoreChecked && est.motionN >= 20) tryRestoreAxis();
+  const d = ax * est.ux + ay * est.uy + az * est.uz;
+  const hx = ax - d * est.ux, hy = ay - d * est.uy, hz = az - d * est.uz;   // horizontal acceleration
+  est.Ix += hx * dt; est.Iy += hy * dt; est.Iz += hz * dt;                // its running integral (for GPS matching)
   const fresh = (t - est.gpsT) < 2500;
-  if (fresh && est.gpsV != null && est.gpsV > 2 && Math.abs(est.dv) > 0.45) {
-    const m = Math.hypot(hx, hy, hz);
-    if (m > 0.25 && m < 6) {
-      const sg = Math.sign(est.dv), dec = 0.9995;
-      est.fwdAcc[0] = est.fwdAcc[0] * dec + hx * sg;
-      est.fwdAcc[1] = est.fwdAcc[1] * dec + hy * sg;
-      est.fwdAcc[2] = est.fwdAcc[2] * dec + hz * sg;
-      est.fwdMag = est.fwdMag * dec + m; est.fwdN++;
-    }
-  }
-  let fx = est.fwdAcc[0], fy = est.fwdAcc[1], fz = est.fwdAcc[2];
-  const fd = fx * ux + fy * uy + fz * uz; fx -= fd * ux; fy -= fd * uy; fz -= fd * uz;
-  const fn = Math.hypot(fx, fy, fz);
-  est.conf = est.fwdMag > 0 ? fn / est.fwdMag : 0;
-  if (!est.fwdOK && est.fwdN > 90 && est.conf > 0.45) est.fwdOK = true;
-  if (est.fwdOK && est.conf < 0.2) est.fwdOK = false;
   let aLong;
-  if (est.fwdOK && fn > 0) aLong = (hx * fx + hy * fy + hz * fz) / fn;
-  else aLong = fresh ? est.dv : 0;                  // until learned: GPS-derived acceleration
+  if (est.fwdOK) { const [fx, fy, fz, fn] = horizAxis(); aLong = fn > 0 ? (hx * fx + hy * fy + hz * fz) / fn : 0; }
+  else aLong = fresh ? est.dv : 0;                                          // until learned: slow GPS-derived acceleration
   est.aLong = aLong;
   est.aF += (aLong - est.aF) * Math.min(1, dt / 0.035);
-  est.aM += (aLong - est.aM) * Math.min(1, dt / 0.055);
+  est.aM += (aLong - est.aM) * Math.min(1, dt / 0.05);
   est.aS += (aLong - est.aS) * Math.min(1, dt / 0.12);
-  // speed: integrate between GPS fixes
+  const j = (est.aM - est.aMprev) / dt; est.aMprev = est.aM;
+  est.jerk += (j - est.jerk) * Math.min(1, dt / 0.08);
+  est.aPred = est.fwdOK ? est.aM + clamp(0.12 * est.jerk, -1.5, 1.5) : est.aM;   // look ~0.1 s ahead on throttle changes
   est.v = Math.max(0, est.v + (est.fwdOK ? est.aF : (fresh ? est.dv : 0)) * dt);
   if (est.gpsV != null && fresh && est.gpsV < 0.6 && Math.abs(est.aS) < 0.35) est.v *= 0.9;
+  const k = (est.hi % HN) * 5;
+  H[k] = t; H[k + 1] = est.Ix; H[k + 2] = est.Iy; H[k + 3] = est.Iz; H[k + 4] = est.v; est.hi++;
   if (t - est.hzT > 1000) { est.hz = est.hzN; est.hzN = 0; est.hzT = t; }
 }
 
@@ -574,13 +609,73 @@ function onGeo(p, tNow) {
   const c = p.coords;
   est.gpsAcc = c.accuracy;
   const sp = (c.speed != null && c.speed >= 0 && isFinite(c.speed)) ? c.speed : null;
+  if (REC.on && tNow == null) recGps(t, sp, c.accuracy);
   if (sp == null) return;
-  if (est.prevV != null) {
-    const dtg = (t - est.prevT) / 1000;
-    if (dtg > 0.3 && dtg < 4) est.dv += ((sp - est.prevV) / dtg - est.dv) * 0.6;
+  const k = histAt(t - GPS_LAG * 1000);
+  if (k >= 0) {
+    const Ix = H[k + 1], Iy = H[k + 2], Iz = H[k + 3], vLag = H[k + 4];
+    const fp = est.fixPrev;
+    if (fp) {
+      const dtg = (t - fp.t) / 1000, dv = sp - fp.v;
+      if (dtg > 0.4 && dtg < 3) {
+        est.dv += (dv / dtg - est.dv) * 0.6;
+        // learn "forward": the horizontal direction whose speed gain (lag-aligned) matches the GPS speed change
+        if (Math.abs(dv) > 0.25 && Math.max(sp, fp.v) > 1) {
+          let dx = Ix - fp.Ix, dy = Iy - fp.Iy, dz = Iz - fp.Iz;
+          const dd = dx * est.ux + dy * est.uy + dz * est.uz;
+          dx -= dd * est.ux; dy -= dd * est.uy; dz -= dd * est.uz;
+          const dec = 0.97;
+          est.fwdAcc[0] = est.fwdAcc[0] * dec + dx * dv;
+          est.fwdAcc[1] = est.fwdAcc[1] * dec + dy * dv;
+          est.fwdAcc[2] = est.fwdAcc[2] * dec + dz * dv;
+          est.fwdMag = est.fwdMag * dec + Math.hypot(dx, dy, dz) * Math.abs(dv);
+          est.dv2 = est.dv2 * dec + dv * dv;
+          est.fwdN++;
+          updateAxisState();
+        }
+      }
+    }
+    est.fixPrev = { t, v: sp, Ix, Iy, Iz };
+    // correct speed drift against what we believed GPS_LAG ago, so the GPS delay does not drag the sound back
+    if (est.fwdOK) est.v = Math.max(0, est.v + 0.5 * (sp - vLag));
+    else est.v = Math.max(0, sp + Math.max(0, est.dv) * GPS_LAG * 0.5);
+  } else {
+    est.v = sp;
   }
-  est.prevV = sp; est.prevT = t; est.gpsV = sp; est.gpsT = t; est.gpsN++;
-  est.v += (sp - est.v) * (est.fwdOK ? 0.35 : 1);
+  est.gpsV = sp; est.gpsT = t; est.gpsN++;
+}
+
+/* ================= ride log (shared to the Mac for tuning; no location, only speed) ================= */
+const REC = { on: false, t0: 0, wall: 0, m: [], g: [], s: [], lastS: 0 };
+const r3 = x => x == null ? null : Math.round(x * 1000) / 1000;
+function recStart() { REC.on = true; REC.t0 = performance.now(); REC.wall = Date.now(); REC.m = []; REC.g = []; REC.s = []; REC.lastS = 0; }
+function recMotion(t, a0, ag) {
+  if (REC.m.length < 72000) REC.m.push([Math.round(t - REC.t0), a0 ? r3(a0.x) : null, a0 ? r3(a0.y) : null, a0 ? r3(a0.z) : null, r3(ag.x), r3(ag.y), r3(ag.z)]);
+}
+function recGps(t, sp, acc) { REC.g.push([Math.round(t - REC.t0), sp == null ? null : r3(sp), acc == null ? null : Math.round(acc)]); }
+function recState(t) {
+  if (t - REC.lastS < 100) return;
+  REC.lastS = t;
+  REC.s.push([Math.round(t - REC.t0), r3(est.v), r3(est.aF), r3(est.aPred), Math.round(G.rpm), G.gear + 1, r3(G.loadOut), est.fwdOK ? 1 : 0, r3(est.conf)]);
+}
+async function shareLog() {
+  if (!REC.m.length) { notice('Nog geen rit opgenomen. Start met Sensoren en rij een stukje.', true); return; }
+  const d = new Date(REC.wall), pad = n => String(n).padStart(2, '0');
+  const name = 'rally-rit-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.json';
+  const data = JSON.stringify({
+    v: 2, app: 'mini-rally-sound', start: d.toISOString(), ua: navigator.userAgent, gpsLag: GPS_LAG, audioLatMs: est.audioLat,
+    set, car: CAR,
+    cols: { m: 't,ax,ay,az,agx,agy,agz', g: 't,speed,accuracy', s: 't,v,aF,aPred,rpm,gear,load,fwdOK,conf' },
+    m: REC.m, g: REC.g, s: REC.s
+  });
+  const file = new File([data], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Rally Sound rit-log' }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
 /* ================= settings ================= */
@@ -641,6 +736,15 @@ async function startAudio() {
   await resumeP.catch(() => {});
   audioPath += ' · ' + Math.round(ctx.sampleRate / 100) / 10 + ' kHz';
   updateChips();
+  // output latency: wired AUX is ~10–30 ms; Bluetooth adds 150+ ms
+  const myCtx = ctx;
+  setTimeout(() => {
+    if (!myCtx || myCtx !== ctx) return;
+    const out = typeof myCtx.outputLatency === 'number' ? myCtx.outputLatency : null;
+    est.audioLat = Math.round(((myCtx.baseLatency || 0) + (out || 0)) * 1000);
+    if (out != null && out > 0.08) notice('Het geluid lijkt via Bluetooth te gaan (+' + Math.round(out * 1000) + ' ms vertraging). Koppel Bluetooth van de auto los en gebruik alleen AUX.', true);
+    updateChips();
+  }, 1500);
 }
 
 async function keepAwake() {
@@ -648,7 +752,7 @@ async function keepAwake() {
 }
 
 /* ================= run state ================= */
-let running = false, geoId = null, sensorsOn = false, sensorTimer = 0;
+let running = false, geoId = null, sensorsOn = false, sensorTimer = 0, lastFwdOK = false;
 let G = newG(), SIM = newSim(), demo = null, curV = 0, curA = 0;
 const input = { gas: 0, brk: 0 };
 const $ = id => document.getElementById(id);
@@ -665,6 +769,7 @@ async function startSensors(permP) {
   const res = await permP;
   if (!running || set.source !== 'sensor') return;
   if (res !== 'granted') { sensorFail(res === 'unsupported' ? 'Dit apparaat heeft geen bewegingssensor' : 'Geen toestemming voor de bewegingssensor'); return; }
+  resetEst(); recStart(); lastFwdOK = false;
   window.addEventListener('devicemotion', onMotion);
   sensorsOn = true;
   if ('geolocation' in navigator) {
@@ -672,10 +777,11 @@ async function startSensors(permP) {
   }
   clearTimeout(sensorTimer);
   sensorTimer = setTimeout(() => { if (running && set.source === 'sensor' && est.motionN === 0) sensorFail('Geen bewegingsdata ontvangen (hier geblokkeerd of geen sensor)'); }, 2200);
-  notice('Sensoren aan. Trek rustig op, dan leert de app welke kant vooruit is.');
+  notice('Sensoren aan. Zolang ‘Richting’ niet groen is, loopt het geluid ±1 s achter (alleen GPS). Trek een paar keer op.');
 }
 function stopSensors() {
   window.removeEventListener('devicemotion', onMotion);
+  REC.on = false;
   if (geoId != null && navigator.geolocation) navigator.geolocation.clearWatch(geoId);
   geoId = null; sensorsOn = false; clearTimeout(sensorTimer);
 }
@@ -701,7 +807,7 @@ function stop() {
   try { if (wakeLock) wakeLock.release(); } catch (e) {}
   wakeLock = null;
   if (unlockEl) { try { unlockEl.pause(); } catch (e) {} }
-  notice('Motor uit.');
+  notice(REC.m.length > 600 ? 'Motor uit. Rit opgenomen (' + Math.round(REC.m.length / 60 / 60 * 10) / 10 + ' min): tik op Rit-log delen en AirDrop hem naar je Mac.' : 'Motor uit.');
   syncUI();
 }
 document.addEventListener('visibilitychange', () => {
@@ -733,10 +839,11 @@ function tick(now) {
         v = s.v; aF = aS = s.a; load = s.load; braking = input.brk > 0.1; mode = 'auto';
       } else {
         v = est.v; aF = est.aF; aS = est.aS; braking = aS < -2.0; mode = set.gearMode;
-        load = (est.aM + resist(v)) / aFull(v) * set.sens;
+        load = (est.aPred + resist(v)) / aFull(v) * set.sens;
         if (v < 0.5 && est.aM < 0.3) load = Math.min(load, 0.05);
       }
       drivetrain(G, dt, v, aF, aS, load, mode, braking);
+      if (REC.on) recState(now);
       curV = v; curA = aS;
       post({ t: { rpm: G.rpm, load: G.loadOut, lim: G.lim ? 1 : 0, gear: G.gear, speed: v } });
     }
@@ -783,8 +890,14 @@ function updateChips() {
     if (est.gpsErr === 1) chip('chipGps', 'bad', 'GPS geweigerd');
     else if (est.gpsAcc != null) chip('chipGps', est.gpsAcc < 30 ? 'ok' : 'wait', 'GPS ±' + Math.round(est.gpsAcc) + ' m');
     else chip('chipGps', 'wait', 'GPS zoekt…');
-    chip('chipDir', est.fwdOK ? 'ok' : 'wait', est.fwdOK ? 'Richting' : 'Richting leren…');
+    chip('chipDir', est.fwdOK ? 'ok' : 'wait', est.fwdOK ? (est.restored ? 'Richting (onthouden)' : 'Richting') : 'Richting leren… (traag)');
+    if (est.fwdOK && !lastFwdOK) notice(est.restored ? 'Richting onthouden van de vorige rit: het geluid reageert direct.' : 'Richting geleerd: het geluid reageert nu direct op de bewegingssensor.');
+    lastFwdOK = est.fwdOK;
   }
+  $('tResp').textContent = !(running && sensorsOn) ? '–' : est.fwdOK ? 'snel (bewegingssensor)' : 'traag (alleen GPS)';
+  $('tLat').textContent = est.audioLat != null && running ? est.audioLat + ' ms' : '–';
+  $('tScale').textContent = est.fwdN ? est.scale.toFixed(2) : '–';
+  $('shareBtn').hidden = !(REC.m.length > 0);
   $('tA').textContent = running ? curA.toFixed(2) + ' m/s²' : '–';
   $('tGps').textContent = est.gpsV != null ? (est.gpsV * 3.6).toFixed(0) + ' km/u' : '–';
   $('tAcc').textContent = est.gpsAcc != null ? '±' + Math.round(est.gpsAcc) + ' m' : '–';
@@ -832,6 +945,7 @@ sliders.forEach(([sid, oid, key, fmt]) => {
 
 $('startBtn').addEventListener('click', onStart);
 $('resetDir').addEventListener('click', () => { resetDir(); notice('Richting gewist. Trek een paar keer rustig op.'); });
+$('shareBtn').addEventListener('click', () => { shareLog().catch(e => notice('Delen lukte niet: ' + e.message, true)); });
 $('demoBtn').addEventListener('click', () => {
   if (!running) onStart();
   demo = { frames: buildDemo(), t0: performance.now(), i: 0 };
@@ -853,7 +967,7 @@ window.addEventListener('keydown', e => { const k = keyMap[e.code]; if (k && set
 window.addEventListener('keyup', e => { const k = keyMap[e.code]; if (k) input[k] = 0; });
 
 // debug/test handle
-window.__rs = { CAR, EngineDSP, BQ, est, onMotion, onGeo, drivetrain, newG, newSim, simStep, buildDemo, rpmFor, resist, aFull, input, get G() { return G; }, get running() { return running; }, get ctx() { return ctx; } };
+window.__rs = { CAR, EngineDSP, BQ, est, resetEst, REC, onMotion, onGeo, drivetrain, newG, newSim, simStep, buildDemo, rpmFor, resist, aFull, input, get G() { return G; }, get running() { return running; }, get ctx() { return ctx; } };
 
 syncUI();
 requestAnimationFrame(tick);
